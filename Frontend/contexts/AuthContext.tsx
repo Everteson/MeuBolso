@@ -16,17 +16,30 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
   const [status, setStatus] = useState<AuthStatus>(AuthStatus.Unknown);
 
   useEffect(() => {
-    // Check local storage or cookie on load
+    // Validate token/user with backend on load
     const checkAuth = async () => {
       try {
         const storedUser = localStorage.getItem('user');
-        if (storedUser) {
-          setUser(JSON.parse(storedUser));
-          setStatus(AuthStatus.Authenticated);
-        } else {
+        if (!storedUser) {
           setStatus(AuthStatus.Unauthenticated);
+          return;
         }
+
+        const parsed = JSON.parse(storedUser);
+        if (!parsed?.token) {
+          localStorage.removeItem('user');
+          setStatus(AuthStatus.Unauthenticated);
+          return;
+        }
+
+        // If token is valid, keep logged in and refresh user fields
+        const me = await api.auth.me();
+        localStorage.setItem('user', JSON.stringify({ ...me, token: parsed.token }));
+        setUser({ ...me, token: parsed.token } as any);
+        setStatus(AuthStatus.Authenticated);
       } catch {
+        localStorage.removeItem('user');
+        setUser(null);
         setStatus(AuthStatus.Unauthenticated);
       }
     };

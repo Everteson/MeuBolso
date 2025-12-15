@@ -1,147 +1,125 @@
 import { DashboardStats, Transaction, User } from '../types';
 
-// Mock Database
-let mockUsers: User[] = [
-  { id: '1', name: 'Everteson', email: 'admin@family.com', role: 'ADMIN' },
-  { id: '2', name: 'Maria', email: 'maria@family.com', role: 'MEMBER' },
-];
+const BASE_URL = (import.meta as any).env?.VITE_API_BASE_URL || 'http://localhost:4030';
 
-let mockTransactions: Transaction[] = [
-  { id: '1', userId: '1', description: 'Supermercado Semanal', amount: 450.50, type: 'EXPENSE', category: 'Alimentação', date: '2023-10-25', isRecurring: false, tag: 'Casa' },
-  { id: '2', userId: '1', description: 'Salário Mensal', amount: 5000.00, type: 'INCOME', category: 'Salário', date: '2023-10-05', isRecurring: true, tag: 'Trabalho' },
-  { id: '3', userId: '1', description: 'Internet Fibra', amount: 120.00, type: 'EXPENSE', category: 'Contas', date: '2023-10-10', isRecurring: true },
-  { id: '4', userId: '1', description: 'Jantar Fora', amount: 180.00, type: 'EXPENSE', category: 'Lazer', date: '2023-10-20', isRecurring: false, tag: 'Casal' },
-  { id: '5', userId: '1', description: 'Freela Design', amount: 800.00, type: 'INCOME', category: 'Extra', date: '2023-10-15', isRecurring: false },
-  { id: '6', userId: '1', description: 'IPVA', amount: 1200.00, type: 'EXPENSE', category: 'Taxas', date: '2023-01-15', isRecurring: true, tag: 'Carro' },
-  { id: '7', userId: '2', description: 'Salário Maria', amount: 3500.00, type: 'INCOME', category: 'Salário', date: '2023-10-01', isRecurring: true },
-  { id: '8', userId: '2', description: 'Academia', amount: 100.00, type: 'EXPENSE', category: 'Saúde', date: '2023-10-02', isRecurring: true },
-];
+class ApiError extends Error {
+  status: number;
+  body: any;
+  constructor(message: string, status: number, body: any) {
+    super(message);
+    this.status = status;
+    this.body = body;
+  }
+}
 
-// Helper to simulate network delay
-const delay = (ms: number) => new Promise(resolve => setTimeout(resolve, ms));
+const getStoredUser = (): any | null => {
+  try {
+    const raw = localStorage.getItem('user');
+    return raw ? JSON.parse(raw) : null;
+  } catch {
+    return null;
+  }
+};
+
+const authHeaders = () => {
+  const u = getStoredUser();
+  const token = u?.token;
+  return token ? { Authorization: `Bearer ${token}` } : {};
+};
+
+async function request<T>(path: string, init: RequestInit = {}): Promise<T> {
+  const res = await fetch(`${BASE_URL}${path}`, {
+    ...init,
+    headers: {
+      ...(init.headers || {}),
+      ...authHeaders(),
+    },
+  });
+
+  const contentType = res.headers.get('content-type') || '';
+  const isJson = contentType.includes('application/json');
+  const body = isJson ? await res.json().catch(() => null) : await res.text().catch(() => null);
+
+  if (!res.ok) {
+    const msg = (body && (body.detail || body.message)) || `HTTP ${res.status}`;
+    throw new ApiError(msg, res.status, body);
+  }
+
+  return body as T;
+}
 
 export const api = {
   auth: {
     login: async (email: string, password: string): Promise<User> => {
-      await delay(800);
-      
-      // 1. Try to find existing user
-      const existingUser = mockUsers.find(u => u.email.toLowerCase() === email.toLowerCase());
-      if (existingUser) return existingUser;
-      
-      // 2. Shortcut for admin (if typed just 'admin')
-      if (email.toLowerCase() === 'admin') return mockUsers[0];
-
-      // 3. Auto-register new user (Demo feature: allow any email to sign up automatically)
-      // This solves the issue of users not knowing valid credentials
-      const newUser: User = {
-        id: Math.random().toString(36).substr(2, 9),
-        name: email.split('@')[0] || 'Novo Usuário',
-        email: email,
-        role: 'MEMBER' // Default to MEMBER
-      };
-      
-      mockUsers.push(newUser);
-      return newUser;
+      // backend returns {id,name,email,role,token}
+      const user = await request<any>(`/api/auth/login`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ email, password }),
+      });
+      return user as User;
     },
     logout: async () => {
-      await delay(500);
+      // no server-side session
+      return;
+    },
+    me: async (): Promise<User> => {
+      return request<User>(`/api/auth/me`, { method: 'GET' });
     },
   },
+
   admin: {
     listUsers: async (): Promise<User[]> => {
-      await delay(500);
-      return [...mockUsers];
+      return request<User[]>(`/api/admin/users`, { method: 'GET' });
     },
     createUser: async (name: string, email: string): Promise<User> => {
-      await delay(600);
-      const newUser: User = {
-        id: Math.random().toString(36).substr(2, 9),
-        name,
-        email,
-        role: 'MEMBER'
-      };
-      mockUsers = [...mockUsers, newUser];
-      return newUser;
+      return request<User>(`/api/admin/users`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ name, email }),
+      });
     },
     deleteUser: async (id: string): Promise<void> => {
-      await delay(500);
-      if (id === '1') throw new Error("Não é possível remover o administrador principal");
-      mockUsers = mockUsers.filter(u => u.id !== id);
-      // Cleanup transactions
-      mockTransactions = mockTransactions.filter(t => t.userId !== id);
-    }
+      await request(`/api/admin/users/${id}`, { method: 'DELETE' });
+    },
   },
+
   transactions: {
     list: async (userId: string): Promise<Transaction[]> => {
-      await delay(600);
-      return mockTransactions
-        .filter(t => t.userId === userId)
-        .sort((a, b) => new Date(b.date).getTime() - new Date(a.date).getTime());
+      const qs = new URLSearchParams({ userId });
+      return request<Transaction[]>(`/api/transactions?${qs.toString()}`, { method: 'GET' });
     },
     create: async (data: Omit<Transaction, 'id'>): Promise<Transaction> => {
-      await delay(600);
-      const newTx: Transaction = { ...data, id: Math.random().toString(36).substr(2, 9) };
-      mockTransactions = [newTx, ...mockTransactions];
-      return newTx;
+      return request<Transaction>(`/api/transactions`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(data),
+      });
     },
     delete: async (id: string): Promise<void> => {
-      await delay(400);
-      mockTransactions = mockTransactions.filter(t => t.id !== id);
+      await request(`/api/transactions/${id}`, { method: 'DELETE' });
     },
     importCsv: async (file: File, userId: string): Promise<number> => {
-      await delay(1500);
-      // In a real app, parse CSV and assign userId to each row
-      return 15; 
-    }
+      const form = new FormData();
+      form.append('file', file);
+
+      const qs = new URLSearchParams({ userId });
+      const res = await request<{ created: number }>(`/api/transactions/import?${qs.toString()}`, {
+        method: 'POST',
+        body: form,
+      });
+      return res.created;
+    },
   },
+
   stats: {
     getDashboard: async (userId: string): Promise<DashboardStats> => {
-      await delay(600);
-      const userTransactions = mockTransactions.filter(t => t.userId === userId);
-      
-      const income = userTransactions.filter(t => t.type === 'INCOME').reduce((acc, curr) => acc + curr.amount, 0);
-      const expenses = userTransactions.filter(t => t.type === 'EXPENSE').reduce((acc, curr) => acc + curr.amount, 0);
-      
-      const categoryMap = new Map<string, number>();
-      userTransactions.filter(t => t.type === 'EXPENSE').forEach(t => {
-        const current = categoryMap.get(t.category) || 0;
-        categoryMap.set(t.category, current + t.amount);
-      });
-
-      const colors = ['#10B981', '#3B82F6', '#F59E0B', '#EF4444', '#8B5CF6', '#EC4899', '#6366F1'];
-      const categoryData = Array.from(categoryMap.entries()).map(([name, value], index) => ({
-        name,
-        value,
-        color: colors[index % colors.length]
-      }));
-
-      return {
-        balance: income - expenses,
-        income,
-        expenses,
-        categoryData,
-        monthlyTrend: [
-          { name: 'Jul', income: 4000, expenses: 3200 },
-          { name: 'Ago', income: 4200, expenses: 2800 },
-          { name: 'Set', income: 5000, expenses: 3500 },
-          { name: 'Out', income: 5800, expenses: 3100 },
-        ]
-      };
+      const qs = new URLSearchParams({ userId });
+      return request<DashboardStats>(`/api/stats/dashboard?${qs.toString()}`, { method: 'GET' });
     },
     getCategoryBreakdown: async (category: string, userId: string): Promise<{ name: string; value: number }[]> => {
-      await delay(500);
-      const categoryTransactions = mockTransactions.filter(t => t.userId === userId && t.category === category && t.type === 'EXPENSE');
-      
-      const tagMap = new Map<string, number>();
-      categoryTransactions.forEach(t => {
-        const tag = t.tag || 'Sem Tag';
-        tagMap.set(tag, (tagMap.get(tag) || 0) + t.amount);
-      });
-
-      return Array.from(tagMap.entries())
-        .map(([name, value]) => ({ name, value }))
-        .sort((a, b) => b.value - a.value);
-    }
-  }
+      const qs = new URLSearchParams({ category, userId });
+      return request<{ name: string; value: number }[]>(`/api/stats/category-breakdown?${qs.toString()}`, { method: 'GET' });
+    },
+  },
 };

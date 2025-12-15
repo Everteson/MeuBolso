@@ -2,7 +2,7 @@ import React, { useState, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { useAuth } from '../contexts/AuthContext';
 import { AuthStatus } from '../types';
-import { Wallet, Loader2, Info } from 'lucide-react';
+import { Wallet, Loader2 } from 'lucide-react';
 
 export const Login: React.FC = () => {
   const { login, status } = useAuth();
@@ -84,17 +84,7 @@ export const Login: React.FC = () => {
           </button>
         </form>
         
-        <div className="mt-6 p-4 bg-blue-50 dark:bg-blue-900/20 rounded-xl text-sm text-blue-800 dark:text-blue-300">
-          <div className="flex gap-2 items-start">
-             <Info className="h-5 w-5 shrink-0 mt-0.5" />
-             <div className="space-y-1">
-               <p className="font-semibold">Credenciais de Demo:</p>
-               <p>👑 Admin: <span className="font-mono">admin@family.com</span></p>
-               <p>👤 Membro: <span className="font-mono">maria@family.com</span></p>
-               <p className="text-xs pt-1 opacity-80">Ou use qualquer outro email para criar um novo usuário automaticamente.</p>
-             </div>
-          </div>
-        </div>
+
       </div>
     </div>
   );
