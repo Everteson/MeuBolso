@@ -17,6 +17,7 @@ Backend/.venv/
 Backend/.env
 Backend/uploads/
 Backend/__pycache__/
+.well-known
 
 # Editor directories and files
 .vscode/*

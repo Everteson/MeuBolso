@@ -5,6 +5,7 @@ import mimetypes
 from pathlib import Path
 
 from openai import OpenAI
+from docling.document_converter import DocumentConverter
 
 from app.core.config import settings
 
@@ -39,6 +40,9 @@ def chat_completions_with_file(*, model: str, prompt: str, file_path: str, filen
     mime, data_url = _file_to_data_url(file_path)
 
     plugins = None
+    content_list = [{"type": "text", "text": prompt}]
+
+    # 1. Native PDF support
     if mime == "application/pdf":
         # OpenRouter plugin to control PDF engine when desired
         plugins = [
@@ -47,17 +51,35 @@ def chat_completions_with_file(*, model: str, prompt: str, file_path: str, filen
                 "pdf": {"engine": settings.openrouter_pdf_engine},
             }
         ]
+        content_list.append({
+            "type": "file",
+            "file": {"filename": filename, "file_data": data_url},
+        })
+
+    # 2. Native Image support
+    elif mime in ["image/png", "image/jpeg", "image/webp", "image/gif"]:
+        content_list.append({
+             "type": "image_url",
+             "image_url": {"url": data_url},
+        })
+
+    # 3. Fallback: Docling for everything else
+    else:
+        # Convert file to markdown using Docling
+        try:
+            converter = DocumentConverter()
+            result = converter.convert(file_path)
+            markdown = result.document.export_to_markdown()
+            
+            # Add to prompt text
+            content_list[0]["text"] += f"\n\n--- Document Content ({filename}) ---\n{markdown}"
+        except Exception as e:
+            raise RuntimeError(f"Failed to process file with Docling: {e}")
 
     messages: list[dict] = [
         {
             "role": "user",
-            "content": [
-                {"type": "text", "text": prompt},
-                {
-                    "type": "file",
-                    "file": {"filename": filename, "file_data": data_url},
-                },
-            ],
+            "content": content_list,
         }
     ]
 
